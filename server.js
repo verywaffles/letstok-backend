@@ -12,14 +12,25 @@ methods: ["GET", "POST"]
 }
 });
 
+console.log("SERVER STARTING...");
+
 // ONLINE USERS
 const users = new Map();
 
-// DM ROOM HELPER
-function dmRoom(a, b) {
-return [a, b].sort().join("-");
+// SIMPLE MESSAGE HISTORY
+const globalMessages = [];
+
+// DM ROOMS
+function getDMRoom(user1, user2) {
+return [user1, user2].sort().join(":");
 }
 
+// ROOT ROUTE
+app.get("/", (req, res) => {
+res.send("LetsTok backend running");
+});
+
+// SOCKET CONNECTION
 io.on("connection", (socket) => {
 
 ```
@@ -27,15 +38,21 @@ console.log("Connected:", socket.id);
 
 // USER JOINS
 socket.on("join", (username) => {
+
     socket.username = username;
 
     users.set(socket.id, username);
 
     socket.join("global");
 
-    io.emit("users", Array.from(users.values()));
+    // Send existing users
+    io.emit("users", [...users.values()]);
+
+    // Send message history
+    socket.emit("history", globalMessages);
 
     console.log(username + " joined");
+
 });
 
 // GLOBAL CHAT
@@ -43,12 +60,20 @@ socket.on("message", (text) => {
 
     if (!socket.username) return;
 
-    io.to("global").emit("message", {
+    const msg = {
         room: "global",
         user: socket.username,
-        text: text,
+        text,
         time: Date.now()
-    });
+    };
+
+    globalMessages.push(msg);
+
+    if (globalMessages.length > 100) {
+        globalMessages.shift();
+    }
+
+    io.to("global").emit("message", msg);
 
 });
 
@@ -57,11 +82,13 @@ socket.on("joinDM", (otherUser) => {
 
     if (!socket.username) return;
 
-    const room = dmRoom(socket.username, otherUser);
+    const room = getDMRoom(socket.username, otherUser);
 
     socket.join(room);
 
     socket.emit("dmJoined", room);
+
+    console.log(socket.username + " joined DM " + room);
 
 });
 
@@ -70,34 +97,12 @@ socket.on("dmMessage", ({ to, text }) => {
 
     if (!socket.username) return;
 
-    const room = dmRoom(socket.username, to);
+    const room = getDMRoom(socket.username, to);
 
     io.to(room).emit("message", {
-        room: room,
+        room,
         user: socket.username,
-        text: text,
-        time: Date.now()
-    });
-
-});
-
-// GROUPS
-socket.on("joinGroup", (groupName) => {
-
-    socket.join(groupName);
-
-    socket.emit("groupJoined", groupName);
-
-});
-
-socket.on("groupMessage", ({ group, text }) => {
-
-    if (!socket.username) return;
-
-    io.to(group).emit("message", {
-        room: group,
-        user: socket.username,
-        text: text,
+        text,
         time: Date.now()
     });
 
@@ -108,7 +113,7 @@ socket.on("disconnect", () => {
 
     users.delete(socket.id);
 
-    io.emit("users", Array.from(users.values()));
+    io.emit("users", [...users.values()]);
 
     console.log("Disconnected:", socket.id);
 
@@ -117,12 +122,8 @@ socket.on("disconnect", () => {
 
 });
 
-app.get("/", (req, res) => {
-res.send("LetsTok backend running");
-});
-
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-console.log("Server running on port", PORT);
+console.log("SERVER RUNNING ON PORT", PORT);
 });
