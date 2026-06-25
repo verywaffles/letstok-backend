@@ -87,22 +87,30 @@ io.on("connection", (socket) => {
     // GLOBAL CHAT (PRIORITY 1 CORE)
     // =====================
 
-    socket.on("message", (text) => {
+    socket.on("message", (data) => {
 
-        if (!socket.username) return;
-        if (!text || text.trim() === "") return;
+    if (!socket.username) return;
 
-        const msg = {
-            room: "global",
-            user: socket.username,
-            text,
-            time: Date.now()
-        };
+    // data can be:
+    // { text: "hello" }
+    // OR { image: "base64..." }
 
-        pushLimited(globalMessages, msg, 100);
+    const msg = {
+        room: "global",
+        user: socket.username,
+        text: data.text || null,
+        image: data.image || null,
+        time: Date.now()
+    };
 
-        io.to("global").emit("message", msg);
-    });
+    globalMessages.push(msg);
+
+    if (globalMessages.length > 100) {
+        globalMessages.shift();
+    }
+
+    io.to("global").emit("message", msg);
+});
 
     // =====================
     // DM SYSTEM (kept, isolated)
