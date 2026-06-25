@@ -6,124 +6,155 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-cors: {
-origin: "*",
-methods: ["GET", "POST"]
-}
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
 });
 
 console.log("SERVER STARTING...");
 
-// ONLINE USERS
-const users = new Map();
+// =====================
+// STORAGE
+// =====================
 
-// SIMPLE MESSAGE HISTORY
+const users = new Map();
 const globalMessages = [];
 
-// DM ROOMS
+// =====================
+// HELPERS
+// =====================
+
 function getDMRoom(user1, user2) {
-return [user1, user2].sort().join(":");
+    return [user1, user2].sort().join(":");
 }
 
-// ROOT ROUTE
+// =====================
+// ROUTES
+// =====================
+
 app.get("/", (req, res) => {
-res.send("LetsTok backend running");
+    res.send("LetsTok backend running");
 });
 
-// SOCKET CONNECTION
+// =====================
+// SOCKET.IO
+// =====================
+
 io.on("connection", (socket) => {
 
-```
-console.log("Connected:", socket.id);
+    console.log("Connected:", socket.id);
 
-// USER JOINS
-socket.on("join", (username) => {
+    // JOIN
+    socket.on("join", (username) => {
 
-    socket.username = username;
+        socket.username = username;
 
-    users.set(socket.id, username);
+        users.set(socket.id, username);
 
-    socket.join("global");
+        socket.join("global");
 
-    // Send existing users
-    io.emit("users", [...users.values()]);
+        console.log(username + " joined");
 
-    // Send message history
-    socket.emit("history", globalMessages);
+        io.emit("users", [...users.values()]);
 
-    console.log(username + " joined");
+        socket.emit("history", globalMessages);
 
-});
+    });
 
-// GLOBAL CHAT
-socket.on("message", (text) => {
+    // GLOBAL MESSAGE
+    socket.on("message", (text) => {
 
-    if (!socket.username) return;
+        if (!socket.username) return;
 
-    const msg = {
-        room: "global",
-        user: socket.username,
-        text,
-        time: Date.now()
-    };
+        const msg = {
+            room: "global",
+            user: socket.username,
+            text,
+            time: Date.now()
+        };
 
-    globalMessages.push(msg);
+        globalMessages.push(msg);
 
-    if (globalMessages.length > 100) {
-        globalMessages.shift();
-    }
+        if (globalMessages.length > 100) {
+            globalMessages.shift();
+        }
 
-    io.to("global").emit("message", msg);
+        io.to("global").emit("message", msg);
 
-});
+    });
 
-// JOIN DM
-socket.on("joinDM", (otherUser) => {
+    // JOIN DM
+    socket.on("joinDM", (otherUser) => {
 
-    if (!socket.username) return;
+        if (!socket.username) return;
 
-    const room = getDMRoom(socket.username, otherUser);
+        const room = getDMRoom(
+            socket.username,
+            otherUser
+        );
 
-    socket.join(room);
+        socket.join(room);
 
-    socket.emit("dmJoined", room);
+        socket.emit("dmJoined", room);
 
-    console.log(socket.username + " joined DM " + room);
+        console.log(
+            socket.username +
+            " joined DM " +
+            room
+        );
 
-});
+    });
 
-// SEND DM
-socket.on("dmMessage", ({ to, text }) => {
+    // SEND DM
+    socket.on("dmMessage", ({ to, text }) => {
 
-    if (!socket.username) return;
+        if (!socket.username) return;
 
-    const room = getDMRoom(socket.username, to);
+        const room = getDMRoom(
+            socket.username,
+            to
+        );
 
-    io.to(room).emit("message", {
-        room,
-        user: socket.username,
-        text,
-        time: Date.now()
+        io.to(room).emit("message", {
+            room,
+            user: socket.username,
+            text,
+            time: Date.now()
+        });
+
+    });
+
+    // DISCONNECT
+    socket.on("disconnect", () => {
+
+        console.log(
+            "Disconnected:",
+            socket.id
+        );
+
+        users.delete(socket.id);
+
+        io.emit(
+            "users",
+            [...users.values()]
+        );
+
     });
 
 });
 
-// DISCONNECT
-socket.on("disconnect", () => {
-
-    users.delete(socket.id);
-
-    io.emit("users", [...users.values()]);
-
-    console.log("Disconnected:", socket.id);
-
-});
-```
-
-});
+// =====================
+// START SERVER
+// =====================
 
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-console.log("SERVER RUNNING ON PORT", PORT);
+
+    console.log(
+        "SERVER RUNNING ON PORT",
+        PORT
+    );
+
 });
