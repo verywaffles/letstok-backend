@@ -5,10 +5,6 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-// =====================
-// SOCKET SETUP
-// =====================
-
 const io = new Server(server, {
     cors: {
         origin: "*",
@@ -16,7 +12,7 @@ const io = new Server(server, {
     }
 });
 
-console.log("SERVER STARTING...");
+console.log("🚀 LETSTOK SERVER STARTING...");
 
 // =====================
 // STORAGE
@@ -26,10 +22,10 @@ const users = new Map();
 // socket.id -> username
 
 const globalMessages = []; 
-// {room, user, text, time}
+// { room, user, text, image, time }
 
-const dms = new Map(); 
-// room -> [{user, text, time}]
+const dmMessages = new Map(); 
+// room -> message array
 
 // =====================
 // HELPERS
@@ -39,7 +35,7 @@ function getDMRoom(user1, user2) {
     return [user1, user2].sort().join(":");
 }
 
-function pushLimited(arr, item, limit = 100) {
+function addLimited(arr, item, limit = 100) {
     arr.push(item);
     if (arr.length > limit) arr.shift();
 }
@@ -61,7 +57,7 @@ io.on("connection", (socket) => {
     console.log("Connected:", socket.id);
 
     // =====================
-    // JOIN SYSTEM
+    // JOIN
     // =====================
 
     socket.on("join", (username) => {
@@ -71,87 +67,95 @@ io.on("connection", (socket) => {
         socket.username = username;
         users.set(socket.id, username);
 
-        // always join global
         socket.join("global");
 
-        console.log(username + " joined global");
+        console.log(`👤 ${username} joined`);
 
         // send user list
         io.emit("users", [...users.values()]);
 
-        // send global chat history
+        // send chat history
         socket.emit("history", globalMessages);
     });
 
     // =====================
-    // GLOBAL CHAT (PRIORITY 1 CORE)
+    // GLOBAL MESSAGE (FIXED SAFE VERSION)
     // =====================
 
     socket.on("message", (data) => {
 
-    if (!socket.username) return;
+        if (!socket.username) return;
 
-    // data can be:
-    // { text: "hello" }
-    // OR { image: "base64..." }
+        // 🔥 FIX: accept BOTH string and object safely
+        let text = "";
+        let image = null;
 
-    const msg = {
-        room: "global",
-        user: socket.username,
-        text: data.text || null,
-        image: data.image || null,
-        time: Date.now()
-    };
+        if (typeof data === "string") {
+            text = data;
+        } else if (typeof data === "object" && data !== null) {
+            text = data.text || "";
+            image = data.image || null;
+        }
 
-    globalMessages.push(msg);
+        // ignore empty messages
+        if (!text && !image) return;
 
-    if (globalMessages.length > 100) {
-        globalMessages.shift();
-    }
+        const msg = {
+            room: "global",
+            user: socket.username,
+            text,
+            image,
+            time: Date.now()
+        };
 
-    io.to("global").emit("message", msg);
-});
+        addLimited(globalMessages, msg, 100);
+
+        io.to("global").emit("message", msg);
+    });
 
     // =====================
-    // DM SYSTEM (kept, isolated)
+    // JOIN DM
     // =====================
 
     socket.on("joinDM", (otherUser) => {
 
-        if (!socket.username) return;
+        if (!socket.username || !otherUser) return;
 
         const room = getDMRoom(socket.username, otherUser);
 
         socket.join(room);
 
-        if (!dms.has(room)) {
-            dms.set(room, []);
+        if (!dmMessages.has(room)) {
+            dmMessages.set(room, []);
         }
 
         socket.emit("dmJoined", room);
 
-        console.log(`${socket.username} joined DM: ${room}`);
+        console.log(`💬 ${socket.username} joined DM ${room}`);
     });
+
+    // =====================
+    // DM MESSAGE
+    // =====================
 
     socket.on("dmMessage", ({ to, text }) => {
 
-        if (!socket.username) return;
-        if (!to || !text) return;
+        if (!socket.username || !to) return;
 
         const room = getDMRoom(socket.username, to);
 
         const msg = {
             room,
             user: socket.username,
-            text,
+            text: text || "",
             time: Date.now()
         };
 
-        if (!dms.has(room)) {
-            dms.set(room, []);
+        if (!dmMessages.has(room)) {
+            dmMessages.set(room, []);
         }
 
-        pushLimited(dms.get(room), msg, 100);
+        addLimited(dmMessages.get(room), msg, 100);
 
         io.to(room).emit("message", msg);
     });
@@ -178,5 +182,5 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-    console.log("SERVER RUNNING ON PORT", PORT);
+    console.log(`✅ LETSTOK RUNNING ON PORT ${PORT}`);
 });
